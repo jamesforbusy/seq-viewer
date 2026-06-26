@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>Sequence Viewer</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    font-family: Arial, sans-serif;
+    background: #f5f5f5;
+    color: #222;
+    padding: 30px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  h1 { color: #2c3e50; font-size: 1.4em; border-bottom: 2px solid #bbb; padding-bottom: 8px; margin-bottom: 20px; }
+  .panel {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+    overflow-x: auto;
+  }
+  .panel h2 { margin: 0 0 12px 0; font-size: 1em; color: #2c3e50; }
+  .form-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .form-row label { font-size: 0.9em; color: #444; white-space: nowrap; }
+  textarea.seq-input {
+    width: 100%; height: 110px;
+    font-family: 'Courier New', monospace; font-size: 12.5px;
+    border: 1px solid #ccc; border-radius: 4px; padding: 8px;
+    resize: vertical; color: #222; margin-bottom: 10px;
+  }
+  input[type="number"] { width: 90px; padding: 5px 8px; font-size: 0.95em; border: 1px solid #ccc; border-radius: 4px; font-family: 'Courier New', monospace; }
+  .btn { padding: 6px 16px; border: none; border-radius: 4px; font-size: 0.92em; cursor: pointer; }
+  .btn-primary { background: #2980b9; color: #fff; }
+  .btn-primary:hover { background: #1f6391; }
+  .btn-green { background: #27ae60; color: #fff; }
+  .btn-green:hover { background: #1e8449; }
+  .btn-purple { background: #8e44ad; color: #fff; }
+  .btn-purple:hover { background: #6c3483; }
+  .btn-gray { background: #aaa; color: #fff; }
+  .btn-gray:hover { background: #888; }
+  .error { color: #c0392b; font-size: 0.85em; margin-top: 6px; }
+  /* Sequence selector */
+  .seq-selector { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .seq-btn {
+    padding: 4px 14px; border: 1px solid #2980b9; background: #fff;
+    color: #2980b9; border-radius: 4px; font-size: 0.88em; cursor: pointer; font-weight: bold;
+  }
+  .seq-btn:hover { background: #eaf3fb; }
+  .seq-btn.active { background: #2980b9; color: #fff; }
+  /* Legend */
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.82em; margin-bottom: 18px; }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-box { width: 14px; height: 14px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
+  /* Sequence display */
+  .seq-section {
+    background: #fff; border: 1px solid #ddd; border-radius: 8px;
+    padding: 14px 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+    margin-bottom: 20px; overflow-x: auto;
+  }
+  .seq-section-title { font-size: 1em; font-weight: bold; color: #c0392b; margin-bottom: 10px; }
+  .block { margin-bottom: 12px; }
+  .ruler-nums, .ruler-dots, .sequence {
+    font-family: 'Courier New', monospace; font-size: 13px;
+    white-space: pre; line-height: 1.7; letter-spacing: 0;
+  }
+  .ruler-nums { color: #999; }
+  .ruler-dots { color: #ccc; }
+  /* Result */
+  .result-block {
+    background: #f9f9f9; border-left: 3px solid #27ae60;
+    padding: 10px 14px; border-radius: 0 6px 6px 0; overflow-x: auto;
+  }
+  .result-block.purple { border-left-color: #8e44ad; }
+  .copy-area {
+    width: 100%; font-family: 'Courier New', monospace; font-size: 12px;
+    border: 1px solid #ddd; border-radius: 4px; padding: 6px 8px;
+    resize: vertical; color: #222;
+  }
+  .ident-box {
+    background: #f0faf4; border: 1px solid #a8d5b5;
+    border-radius: 5px; padding: 10px 14px; margin-top: 10px;
+  }
+</style>
+</head>
+<body>
+<h1>Sequence Viewer</h1>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="legend-item"><span class="legend-box" style="background:#aac4f8"></span>疏水性 (A V I L M F W P)</div>
+  <div class="legend-item"><span class="legend-box" style="background:#f88080"></span>帶電/極性 (S T K R)</div>
+  <div class="legend-item"><span class="legend-box" style="background:#70d070"></span>極性 (N Q Y H)</div>
+  <div class="legend-item"><span class="legend-box" style="background:#d080d0"></span>酸性 (D E)</div>
+  <div class="legend-item"><span class="legend-box" style="background:#f4b97a"></span>甘胺酸 (G)</div>
+  <div class="legend-item"><span class="legend-box" style="background:#e8e840"></span>半胱胺酸 (C)</div>
+</div>
+
+<!-- Input Panel -->
+<div class="panel">
+  <h2>輸入序列　<span style="font-size:0.82em;font-weight:normal;color:#777;">支援單條或多條序列（FASTA 格式）</span></h2>
+  <textarea class="seq-input" id="seq-input" placeholder=">Seq_A
+MHLGPERAGWGTCTAPT...
+>Seq_B
+HQYGVSQCFLLSPGVLS...
+
+（純序列亦可，不帶 > 則自動命名）"></textarea>
+  <div class="form-row">
+    <button class="btn btn-primary" onclick="loadSeqs()">載入序列</button>
+    <button class="btn btn-gray" onclick="clearAll()">清除</button>
+    <span id="load-info" style="font-size:0.85em;color:#27ae60;"></span>
+  </div>
+  <div class="error" id="load-error"></div>
+</div>
+
+<!-- Sequence Selector + Range Query -->
+<div class="panel" id="query-panel" style="display:none;">
+  <h2>範圍查詢</h2>
+  <div style="font-size:0.85em;color:#555;margin-bottom:8px;">選擇序列：</div>
+  <div class="seq-selector" id="seq-selector-range"></div>
+  <div class="form-row">
+    <label>起始位置</label>
+    <input type="number" id="pos-start" min="1" value="1">
+    <label>結束位置</label>
+    <input type="number" id="pos-end" min="1" value="30">
+    <button class="btn btn-green" onclick="queryRange()">查詢</button>
+    <button class="btn btn-gray" onclick="clearResult()">清除結果</button>
+  </div>
+  <div class="error" id="query-error"></div>
+  <div id="query-result"></div>
+</div>
+
+<!-- Sequence Selector + Reverse Search -->
+<div class="panel" id="search-panel" style="display:none;">
+  <h2>序列反查　<span style="font-size:0.8em;font-weight:normal;color:#777;">輸入片段 → 找出位置範圍</span></h2>
+  <div style="font-size:0.85em;color:#555;margin-bottom:8px;">選擇序列：</div>
+  <div class="seq-selector" id="seq-selector-search"></div>
+  <div class="form-row">
+    <label>查詢片段</label>
+    <input type="text" id="search-input" placeholder="e.g. MHLGP" style="width:280px;font-family:'Courier New',monospace;padding:5px 8px;border:1px solid #ccc;border-radius:4px;">
+    <button class="btn btn-purple" onclick="searchSubseq()">反查</button>
+    <button class="btn btn-gray" onclick="clearSearch()">清除結果</button>
+  </div>
+  <div class="error" id="search-error"></div>
+  <div id="search-result"></div>
+</div>
+
+<!-- Full Sequence View -->
+<div id="full-seq-view"></div>
+
+<script>
+const AA_COLORS = {
+  'A':'#aac4f8','V':'#aac4f8','I':'#aac4f8','L':'#aac4f8','M':'#aac4f8',
+  'F':'#aac4f8','W':'#aac4f8','P':'#aac4f8',
+  'G':'#f4b97a',
+  'S':'#f88080','T':'#f88080','K':'#f88080','R':'#f88080',
+  'C':'#e8e840',
+  'Y':'#70d070','H':'#70d070','N':'#70d070','Q':'#70d070',
+  'D':'#d080d0','E':'#d080d0',
+};
+
+let loadedSeqs = [];      // [{name, seq}, ...]
+let selectedRangeIdx = 0;
+let selectedSearchIdx = 0;
+
+/* ── Core rendering ── */
+function colorAA(aa) {
+  const c = AA_COLORS[aa] || '#e0e0e0';
+  return `<span style="display:inline-block;width:1ch;text-align:center;background:${c};">${aa}</span>`;
+}
+
+function makeRuler(chunk, posStart) {
+  const n = chunk.length;
+  const numsArr = new Array(n).fill(' ');
+  const dotsArr = new Array(n).fill('.');
+  for (let i = 0; i < n; i++) {
+    const pos = posStart + i;
+    if (pos % 10 === 0) {
+      const label = String(pos);
+      dotsArr[i] = '|';
+      for (let j = 0; j < label.length; j++) {
+        const col = i - (label.length - 1) + j;
+        if (col >= 0) numsArr[col] = label[j];
+      }
+    }
+  }
+  return `<div class="ruler-nums">${numsArr.join('')}</div><div class="ruler-dots">${dotsArr.join('')}</div>`;
+}
+
+function renderSeq(seq, posStart) {
+  const BLOCK = 60;
+  let html = '';
+  for (let b = 0; b < seq.length; b += BLOCK) {
+    const chunk = seq.slice(b, b + BLOCK);
+    html += `<div class="block">${makeRuler(chunk, posStart + b)}<div class="sequence">${[...chunk].map(colorAA).join('')}</div></div>`;
+  }
+  return html;
+}
+
+function renderSeqHighlighted(seq, hits) {
+  const hitSet = new Set();
+  hits.forEach(h => { for (let p = h.start; p <= h.end; p++) hitSet.add(p); });
+  const BLOCK = 60;
+  let html = '';
+  for (let b = 0; b < seq.length; b += BLOCK) {
+    const chunk = seq.slice(b, b + BLOCK);
+    const bs = b + 1;
+    html += `<div class="block">${makeRuler(chunk, bs)}<div class="sequence">${[...chunk].map((aa, i) => {
+      const pos = bs + i;
+      if (hitSet.has(pos)) {
+        const c = AA_COLORS[aa] || '#e0e0e0';
+        return `<span style="display:inline-block;width:1ch;text-align:center;background:${c};font-weight:bold;">${aa}</span>`;
+      }
+      return `<span style="display:inline-block;width:1ch;text-align:center;color:#ccc;">${aa}</span>`;
+    }).join('')}</div></div>`;
+  }
+  return html;
+}
+
+function renderAlignment(query, subject, posStart) {
+  const BLOCK = 60;
+  const LABEL = 6;
+  let html = '';
+  for (let b = 0; b < query.length; b += BLOCK) {
+    const qChunk = query.slice(b, b + BLOCK);
+    const sChunk = subject.slice(b, b + BLOCK);
+    const n = qChunk.length;
+    const blockStart = posStart + b;
+    const numsArr = new Array(n).fill(' ');
+    const dotsArr = new Array(n).fill('.');
+    for (let i = 0; i < n; i++) {
+      const pos = blockStart + i;
+      if (pos % 10 === 0) {
+        const label = String(pos);
+        dotsArr[i] = '|';
+        for (let j = 0; j < label.length; j++) {
+          const col = i - (label.length - 1) + j;
+          if (col >= 0) numsArr[col] = label[j];
+        }
+      }
+    }
+    const row = `display:flex;font-family:'Courier New',monospace;font-size:13px;line-height:1.8;`;
+    const lbl = `width:${LABEL}ch;flex-shrink:0;color:#999;`;
+    html += `<div style="${row}"><div style="${lbl}"></div><div style="white-space:pre;color:#999;">${numsArr.join('')}</div></div>`;
+    html += `<div style="${row}"><div style="${lbl}"></div><div style="white-space:pre;color:#ccc;">${dotsArr.join('')}</div></div>`;
+    html += `<div style="${row}"><div style="${lbl}">Query </div><div>${[...qChunk].map((aa,i)=>{const m=aa===sChunk[i];const c=m?(AA_COLORS[aa]||'#e0e0e0'):'#ff8888';return`<span style="display:inline-block;width:1ch;text-align:center;background:${c};">${aa}</span>`;}).join('')}</div></div>`;
+    html += `<div style="${row}"><div style="${lbl}"></div><div>${[...qChunk].map((aa,i)=>{const m=aa===sChunk[i];return`<span style="display:inline-block;width:1ch;text-align:center;color:${m?'#27ae60':'#e74c3c'};">${m?'|':'·'}</span>`;}).join('')}</div></div>`;
+    html += `<div style="${row}"><div style="${lbl}">Seq   </div><div>${[...sChunk].map((aa,i)=>{const m=aa===qChunk[i];const c=m?(AA_COLORS[aa]||'#e0e0e0'):'#ffb347';return`<span style="display:inline-block;width:1ch;text-align:center;background:${c};">${aa}</span>`;}).join('')}</div></div>`;
+    html += `<div style="height:10px;"></div>`;
+  }
+  return html;
+}
+
+/* ── Parsing ── */
+function parseMultiSeq(raw) {
+  const result = [];
+  const lines = raw.trim().split(/\r?\n/);
+  let name = null, buf = '';
+
+  const flush = () => {
+    const seq = buf.replace(/\s+/g, '').toUpperCase();
+    if (seq) result.push({ name: name || `序列 ${result.length + 1}`, seq });
+    buf = '';
+  };
+
+  for (const line of lines) {
+    const t = line.trim();
+    if (t.startsWith('>')) {
+      flush();
+      name = t.slice(1).trim() || `序列 ${result.length + 1}`;
+    } else {
+      buf += t;
+    }
+  }
+  flush();
+
+  // No FASTA headers — treat whole thing as one sequence
+  if (result.length === 0) {
+    const seq = raw.replace(/\s+/g, '').toUpperCase();
+    if (seq) result.push({ name: '未命名序列', seq });
+  }
+  return result;
+}
+
+/* ── Load ── */
+function loadSeqs() {
+  const raw = document.getElementById('seq-input').value;
+  const errEl = document.getElementById('load-error');
+  errEl.textContent = '';
+
+  const seqs = parseMultiSeq(raw);
+  if (seqs.length === 0) { errEl.textContent = '請貼上序列。'; return; }
+
+  loadedSeqs = seqs;
+  selectedRangeIdx = 0;
+  selectedSearchIdx = 0;
+
+  buildSelectors();
+  document.getElementById('query-panel').style.display = 'block';
+  document.getElementById('search-panel').style.display = 'block';
+  document.getElementById('load-info').textContent = `已載入 ${seqs.length} 條序列`;
+  updateRangeInfo();
+  renderAllSeqs();
+  clearResult();
+  clearSearch();
+}
+
+function buildSelectors() {
+  ['range', 'search'].forEach(type => {
+    const el = document.getElementById(`seq-selector-${type}`);
+    el.innerHTML = loadedSeqs.map((s, i) =>
+      `<button class="seq-btn${i === 0 ? ' active' : ''}" onclick="selectSeq('${type}',${i},this)">
+        ${s.name} <span style="font-weight:normal;font-size:0.85em;color:#aaa;">(${s.seq.length} aa)</span>
+      </button>`
+    ).join('');
+  });
+}
+
+function selectSeq(type, idx, btn) {
+  document.querySelectorAll(`#seq-selector-${type} .seq-btn`).forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (type === 'range') { selectedRangeIdx = idx; updateRangeInfo(); clearResult(); }
+  else { selectedSearchIdx = idx; clearSearch(); }
+}
+
+function updateRangeInfo() {
+  const s = loadedSeqs[selectedRangeIdx];
+  document.getElementById('pos-end').value = Math.min(30, s.seq.length);
+  document.getElementById('pos-end').max = s.seq.length;
+  document.getElementById('pos-start').max = s.seq.length;
+}
+
+function renderAllSeqs() {
+  document.getElementById('full-seq-view').innerHTML = loadedSeqs.map(s =>
+    `<div class="seq-section">
+      <div class="seq-section-title">${s.name} <span style="font-weight:normal;color:#777;font-size:0.85em">(${s.seq.length} aa)</span></div>
+      ${renderSeq(s.seq, 1)}
+    </div>`
+  ).join('');
+}
+
+/* ── Range Query ── */
+function queryRange() {
+  const s = parseInt(document.getElementById('pos-start').value);
+  const e = parseInt(document.getElementById('pos-end').value);
+  const errEl = document.getElementById('query-error');
+  const resultEl = document.getElementById('query-result');
+  errEl.textContent = '';
+  resultEl.innerHTML = '';
+
+  if (!loadedSeqs.length) { errEl.textContent = '請先載入序列。'; return; }
+  if (isNaN(s) || isNaN(e) || s < 1 || e < 1) { errEl.textContent = '請輸入有效的正整數位置。'; return; }
+  if (s > e) { errEl.textContent = '起始位置不能大於結束位置。'; return; }
+
+  const { name, seq } = loadedSeqs[selectedRangeIdx];
+  const actualEnd = Math.min(e, seq.length);
+  const sub = seq.slice(s - 1, actualEnd);
+
+  let html = `<div class="result-block">
+    <div style="font-size:0.88em;font-weight:bold;color:#c0392b;margin-bottom:8px;">
+      ${name}　<span style="font-weight:normal;color:#777;">位置 ${s}–${actualEnd}（${sub.length} aa）</span>
+    </div>`;
+  if (actualEnd < e) html += `<div style="font-size:0.82em;color:#e67e22;margin-bottom:6px;">⚠ 序列全長 ${seq.length} aa，實際顯示至 ${actualEnd}。</div>`;
+  html += renderSeq(sub, s);
+  html += `<div style="font-size:0.8em;color:#888;margin-top:8px;margin-bottom:4px;">純文字</div>
+    <textarea class="copy-area" rows="2" readonly>${sub}</textarea>
+  </div>`;
+  resultEl.innerHTML = html;
+}
+
+/* ── Reverse Search ── */
+function fuzzyAlign(query, fullSeq, topN = 3) {
+  const qLen = query.length;
+  if (qLen > fullSeq.length) return [];
+  const results = [];
+  for (let i = 0; i <= fullSeq.length - qLen; i++) {
+    let matches = 0;
+    for (let j = 0; j < qLen; j++) { if (query[j] === fullSeq[i + j]) matches++; }
+    results.push({ start: i+1, end: i+qLen, subject: fullSeq.slice(i, i+qLen), matches, identity: matches/qLen });
+  }
+  results.sort((a, b) => b.identity - a.identity);
+  return results.slice(0, topN);
+}
+
+function searchSubseq() {
+  const raw = document.getElementById('search-input').value.trim().toUpperCase().replace(/\s+/g, '');
+  const errEl = document.getElementById('search-error');
+  const resultEl = document.getElementById('search-result');
+  errEl.textContent = '';
+  resultEl.innerHTML = '';
+
+  if (!loadedSeqs.length) { errEl.textContent = '請先載入序列。'; return; }
+  if (!raw) { errEl.textContent = '請輸入查詢片段。'; return; }
+
+  const { name, seq } = loadedSeqs[selectedSearchIdx];
+  if (raw.length > seq.length) { errEl.textContent = '查詢片段比序列還長。'; return; }
+
+  // Exact search
+  const hits = [];
+  let pos = 0;
+  while (pos <= seq.length - raw.length) {
+    const idx = seq.indexOf(raw, pos);
+    if (idx === -1) break;
+    hits.push({ start: idx + 1, end: idx + raw.length });
+    pos = idx + 1;
+  }
+
+  if (hits.length > 0) {
+    const hitList = hits.map(h => `${h.start}–${h.end}`).join('　');
+    let html = `<div style="font-size:0.85em;color:#555;margin-bottom:6px;">
+      精確比對：<strong>${hits.length}</strong> 個命中（${name}，片段長度 ${raw.length} aa）</div>
+      <div style="font-size:0.85em;color:#8e44ad;margin-bottom:10px;font-family:'Courier New',monospace;">命中位置：${hitList}</div>`;
+    html += `<div class="result-block purple">
+      <div style="font-size:0.8em;color:#555;margin-bottom:8px;">命中區段以胺基酸顏色標示，其餘以灰色顯示</div>
+      ${renderSeqHighlighted(seq, hits)}`;
+    if (hits.length > 1) html += `<textarea class="copy-area" rows="${Math.min(hits.length+1,5)}" style="margin-top:8px;" readonly>${hits.map(h=>`${h.start}-${h.end}`).join('\n')}</textarea>`;
+    html += `</div>`;
+    resultEl.innerHTML = html;
+    return;
+  }
+
+  // Fuzzy fallback
+  const fuzzyHits = fuzzyAlign(raw, seq, 3);
+  let html = `<div style="font-size:0.85em;color:#e67e22;margin-bottom:10px;">
+    未找到精確比對，顯示最相似位置（${name}）</div>`;
+
+  fuzzyHits.forEach((h, idx) => {
+    const p = (h.identity * 100).toFixed(1);
+    const col = h.identity >= 0.9 ? '#27ae60' : h.identity >= 0.7 ? '#e67e22' : '#e74c3c';
+
+    // Identical contiguous ranges
+    const identRanges = [];
+    let runStart = null;
+    for (let i = 0; i < raw.length; i++) {
+      const seqPos = h.start + i;
+      if (raw[i] === h.subject[i]) {
+        if (runStart === null) runStart = seqPos;
+      } else {
+        if (runStart !== null) { identRanges.push({ start: runStart, end: seqPos - 1 }); runStart = null; }
+      }
+    }
+    if (runStart !== null) identRanges.push({ start: runStart, end: h.end });
+
+    const identHtml = identRanges.map(r =>
+      `<div style="font-size:12px;margin-bottom:3px;">
+        <span style="color:#27ae60;font-weight:bold;font-family:'Courier New',monospace;">${r.start}–${r.end}</span>
+        <span style="color:#777;">（${r.end - r.start + 1} aa）</span>
+      </div>`).join('');
+    const identCopy = identRanges.map(r => `${r.start}-${r.end}\t${seq.slice(r.start-1, r.end)}`).join('\n');
+
+    html += `<div class="result-block purple" style="margin-bottom:14px;">
+      <div style="font-size:0.88em;font-weight:bold;color:#2c3e50;margin-bottom:8px;">
+        #${idx+1}　位置 ${h.start}–${h.end}
+        <span style="color:${col};">一致性 ${h.matches}/${raw.length} (${p}%)</span>
+      </div>
+      ${renderAlignment(raw, h.subject, h.start)}
+      <div class="ident-box">
+        <div style="font-size:0.82em;font-weight:bold;color:#27ae60;margin-bottom:6px;">完全相同的連續範圍（${identRanges.length} 段）</div>
+        ${identHtml}
+        <textarea class="copy-area" rows="${Math.min(identRanges.length+1,5)}" style="margin-top:6px;" readonly>${identCopy}</textarea>
+      </div>
+    </div>`;
+  });
+
+  resultEl.innerHTML = html;
+}
+
+/* ── Clear ── */
+function clearResult() {
+  document.getElementById('query-result').innerHTML = '';
+  document.getElementById('query-error').textContent = '';
+  document.getElementById('search-result').innerHTML = '';
+  document.getElementById('search-error').textContent = '';
+}
+function clearSearch() {
+  document.getElementById('search-result').innerHTML = '';
+  document.getElementById('search-error').textContent = '';
+  document.getElementById('query-result').innerHTML = '';
+  document.getElementById('query-error').textContent = '';
+}
+function clearAll() {
+  document.getElementById('seq-input').value = '';
+  document.getElementById('load-error').textContent = '';
+  document.getElementById('load-info').textContent = '';
+  document.getElementById('query-panel').style.display = 'none';
+  document.getElementById('search-panel').style.display = 'none';
+  document.getElementById('full-seq-view').innerHTML = '';
+  loadedSeqs = [];
+  clearResult();
+  clearSearch();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.activeElement.id === 'search-input') searchSubseq();
+  else if (e.key === 'Enter' && document.activeElement.id === 'pos-end') queryRange();
+});
+</script>
+</body>
+</html>
