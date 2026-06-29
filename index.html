@@ -42,6 +42,8 @@
   .btn-purple:hover { background: #6c3483; }
   .btn-gray { background: #aaa; color: #fff; }
   .btn-gray:hover { background: #888; }
+  .btn-orange { background: #e67e22; color: #fff; }
+  .btn-orange:hover { background: #ca6f1e; }
   .error { color: #c0392b; font-size: 0.85em; margin-top: 6px; }
   /* Sequence selector */
   .seq-selector { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
@@ -117,6 +119,30 @@ HQYGVSQCFLLSPGVLS...
   <div class="error" id="load-error"></div>
 </div>
 
+<!-- Codon Translation Panel -->
+<div class="panel">
+  <h2>密碼子轉譯　<span style="font-size:0.82em;font-weight:normal;color:#777;">DNA / RNA → 胺基酸序列</span></h2>
+  <textarea class="seq-input" id="codon-input" placeholder=">Gene_name
+ATGGGCCCAGGCTTCAAGCAGAGCCTCCTCACCTTCATCCTCCTGTTCAGCCTCCTCACAAGAGGCTTCAGC...
+
+（支援 FASTA 格式或純序列；DNA 或 RNA 皆可）"></textarea>
+  <div class="form-row">
+    <label>讀框</label>
+    <select id="codon-frame" style="padding:5px 8px;border:1px solid #ccc;border-radius:4px;font-size:0.92em;">
+      <option value="1">Frame 1</option>
+      <option value="2">Frame 2</option>
+      <option value="3">Frame 3</option>
+    </select>
+    <label style="display:flex;align-items:center;gap:4px;">
+      <input type="checkbox" id="codon-revcomp">反向互補
+    </label>
+    <button class="btn btn-orange" onclick="translateCodon()">轉譯</button>
+    <button class="btn btn-gray" onclick="clearCodon()">清除</button>
+  </div>
+  <div class="error" id="codon-error"></div>
+  <div id="codon-result"></div>
+</div>
+
 <!-- Sequence Selector + Range Query -->
 <div class="panel" id="query-panel" style="display:none;">
   <h2>範圍查詢</h2>
@@ -167,6 +193,104 @@ const AA_COLORS = {
 let loadedSeqs = [];      // [{name, seq}, ...]
 let selectedRangeIdx = 0;
 let selectedSearchIdx = 0;
+let lastTranslated = null;
+
+const CODON_TABLE = {
+  'TTT':'F','TTC':'F','TTA':'L','TTG':'L',
+  'CTT':'L','CTC':'L','CTA':'L','CTG':'L',
+  'ATT':'I','ATC':'I','ATA':'I','ATG':'M',
+  'GTT':'V','GTC':'V','GTA':'V','GTG':'V',
+  'TCT':'S','TCC':'S','TCA':'S','TCG':'S',
+  'CCT':'P','CCC':'P','CCA':'P','CCG':'P',
+  'ACT':'T','ACC':'T','ACA':'T','ACG':'T',
+  'GCT':'A','GCC':'A','GCA':'A','GCG':'A',
+  'TAT':'Y','TAC':'Y','TAA':'*','TAG':'*',
+  'CAT':'H','CAC':'H','CAA':'Q','CAG':'Q',
+  'AAT':'N','AAC':'N','AAA':'K','AAG':'K',
+  'GAT':'D','GAC':'D','GAA':'E','GAG':'E',
+  'TGT':'C','TGC':'C','TGA':'*','TGG':'W',
+  'CGT':'R','CGC':'R','CGA':'R','CGG':'R',
+  'AGT':'S','AGC':'S','AGA':'R','AGG':'R',
+  'GGT':'G','GGC':'G','GGA':'G','GGG':'G',
+};
+
+/* ── Codon Translation ── */
+function revComp(seq) {
+  const comp = {'A':'T','T':'A','G':'C','C':'G','N':'N'};
+  return seq.split('').reverse().map(b => comp[b] || 'N').join('');
+}
+
+function translateCodon() {
+  const raw = document.getElementById('codon-input').value.trim();
+  const frame = parseInt(document.getElementById('codon-frame').value);
+  const doRevComp = document.getElementById('codon-revcomp').checked;
+  const errEl = document.getElementById('codon-error');
+  const resultEl = document.getElementById('codon-result');
+  errEl.textContent = '';
+  resultEl.innerHTML = '';
+
+  if (!raw) { errEl.textContent = '請輸入核苷酸序列。'; return; }
+
+  let name = '轉譯序列', nt = '';
+  if (raw.startsWith('>')) {
+    const lines = raw.split(/\r?\n/);
+    name = lines[0].slice(1).trim() || '轉譯序列';
+    nt = lines.slice(1).join('').replace(/\s+/g, '').toUpperCase();
+  } else {
+    nt = raw.replace(/\s+/g, '').toUpperCase();
+  }
+  nt = nt.replace(/U/g, 'T');
+
+  if (!/^[ATCGN]+$/.test(nt)) { errEl.textContent = '序列含有非核苷酸字符（只接受 A T C G U N）。'; return; }
+  if (nt.length < 3) { errEl.textContent = '序列長度不足三個核苷酸。'; return; }
+
+  let s = doRevComp ? revComp(nt) : nt;
+  s = s.slice(frame - 1);
+  let aa = '';
+  for (let i = 0; i + 2 < s.length; i += 3) {
+    aa += CODON_TABLE[s.slice(i, i + 3)] || 'X';
+  }
+
+  const stopIdx = aa.indexOf('*');
+  const aaClean = stopIdx >= 0 ? aa.slice(0, stopIdx) : aa;
+  const stopNote = stopIdx >= 0
+    ? `，含終止密碼子（位置 ${stopIdx + 1}，截斷後 ${aaClean.length} aa）`
+    : `，${aaClean.length} aa`;
+
+  lastTranslated = { name, aa: aaClean };
+
+  let html = `<div class="result-block" style="overflow-x:auto;">
+    <div style="font-size:0.88em;font-weight:bold;color:#c0392b;margin-bottom:8px;">
+      ${name}　<span style="font-weight:normal;color:#777;">
+        ${nt.length} nt，讀框 ${frame}${doRevComp ? '（反向互補）' : ''}${stopNote}
+      </span>
+    </div>
+    ${renderSeq(aaClean, 1)}
+    <div style="font-size:0.8em;color:#888;margin-top:8px;margin-bottom:4px;">胺基酸序列（純文字）</div>
+    <textarea class="copy-area" rows="3" readonly>${aaClean}</textarea>
+    <div style="margin-top:10px;">
+      <button class="btn btn-green" onclick="loadTranslated()">載入至序列分析</button>
+      <span style="font-size:0.82em;color:#777;margin-left:8px;">將此序列加入上方輸入框並自動載入</span>
+    </div>
+  </div>`;
+  resultEl.innerHTML = html;
+}
+
+function loadTranslated() {
+  if (!lastTranslated) return;
+  const existing = document.getElementById('seq-input').value.trim();
+  const entry = `>${lastTranslated.name}\n${lastTranslated.aa}`;
+  document.getElementById('seq-input').value = existing ? existing + '\n' + entry : entry;
+  loadSeqs();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function clearCodon() {
+  document.getElementById('codon-input').value = '';
+  document.getElementById('codon-result').innerHTML = '';
+  document.getElementById('codon-error').textContent = '';
+  lastTranslated = null;
+}
 
 /* ── Core rendering ── */
 function colorAA(aa) {
