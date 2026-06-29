@@ -235,13 +235,13 @@ function translateCodon() {
   if (raw.startsWith('>')) {
     const lines = raw.split(/\r?\n/);
     name = lines[0].slice(1).trim() || '轉譯序列';
-    nt = lines.slice(1).join('').replace(/\s+/g, '').toUpperCase();
+    nt = lines.slice(1).join('').replace(/[^ATCGUNatcgun]/g, '').toUpperCase();
   } else {
-    nt = raw.replace(/\s+/g, '').toUpperCase();
+    nt = raw.replace(/[^ATCGUNatcgun]/g, '').toUpperCase();
   }
   nt = nt.replace(/U/g, 'T');
 
-  if (!/^[ATCGN]+$/.test(nt)) { errEl.textContent = '序列含有非核苷酸字符（只接受 A T C G U N）。'; return; }
+  if (nt.length === 0) { errEl.textContent = '未偵測到有效核苷酸字符（A T C G U N）。'; return; }
   if (nt.length < 3) { errEl.textContent = '序列長度不足三個核苷酸。'; return; }
 
   let s = doRevComp ? revComp(nt) : nt;
