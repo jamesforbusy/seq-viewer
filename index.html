@@ -373,37 +373,24 @@ function queryRange() {
   resultEl.innerHTML = html;
 }
 
-/* ── Multi-seq Range Comparison ── */
-function compareRange() {
-  const s = parseInt(document.getElementById('pos-start').value);
-  const e = parseInt(document.getElementById('pos-end').value);
-  const errEl = document.getElementById('query-error');
-  const resultEl = document.getElementById('query-result');
-  errEl.textContent = '';
-  resultEl.innerHTML = '';
-
-  if (!loadedSeqs.length) { errEl.textContent = '請先載入序列。'; return; }
-  if (isNaN(s) || isNaN(e) || s < 1 || e < 1) { errEl.textContent = '請輸入有效的正整數位置。'; return; }
-  if (s > e) { errEl.textContent = '起始位置不能大於結束位置。'; return; }
-
+/* ── Shared Clustal-style comparison renderer ── */
+function buildComparisonHtml(s, e, panelId, simple = false, refSeq = null) {
   const FONT = `font-family:Courier,monospace;font-size:14px;`;
   const labelW = Math.max(...loadedSeqs.map(sq => sq.name.length), 6) + 2;
 
-  // Measure actual character width to compute block size without scrollbar
   const _probe = document.createElement('span');
   _probe.style.cssText = 'font-family:Courier,monospace;font-size:14px;position:absolute;visibility:hidden;white-space:pre;';
   _probe.textContent = '0';
   document.body.appendChild(_probe);
-  const charPx = _probe.getBoundingClientRect().width + 2; // +2px spacing
+  const charPx = _probe.getBoundingClientRect().width + 2;
   document.body.removeChild(_probe);
-  const panelInner = document.getElementById('query-panel').clientWidth - 40; // panel padding 20px×2
-  const availPx = panelInner - 28 - labelW * charPx; // result-block padding 14px×2
+  const panelInner = document.getElementById(panelId).clientWidth - 40;
+  const availPx = panelInner - 28 - labelW * charPx;
   const BLOCK = Math.max(40, Math.floor(availPx / charPx));
   const totalLen = e - s + 1;
 
-  // Pre-compute conservation and AA frequency per position
   const conserved = new Set();
-  const posFreq = {};  // pos → { AA: count }
+  const posFreq = {};
   for (let pos = s; pos <= e; pos++) {
     const aas = loadedSeqs.map(sq => sq.seq[pos - 1] || null).filter(a => a !== null);
     if (!aas.length) continue;
@@ -413,7 +400,6 @@ function compareRange() {
     if (aas.every(a => a === aas[0])) conserved.add(pos);
   }
 
-  // Consensus: lowercase of most common aa; space if no majority
   function consensusAA(pos) {
     const aas = loadedSeqs.map(sq => sq.seq[pos - 1]).filter(Boolean);
     if (!aas.length) return ' ';
@@ -425,20 +411,13 @@ function compareRange() {
 
   const rowStyle = `display:flex;align-items:baseline;line-height:2.1;`;
   const lblStyle = `${FONT}width:${labelW}ch;flex-shrink:0;`;
-
-  let html = `<div class="result-block" style="overflow-x:auto;">
-    <div style="font-size:0.88em;font-weight:bold;color:#2c3e50;margin-bottom:10px;">
-      位置 ${s}–${e}（${totalLen} aa）　共 ${loadedSeqs.length} 條序列比較
-      <span style="font-size:0.85em;font-weight:normal;color:#777;margin-left:12px;">黑底＝保守　灰底＝差異但有相同　白底＝唯一差異</span>
-    </div>`;
+  let html = '';
 
   for (let b = 0; b < totalLen; b += BLOCK) {
     const bStart = s + b;
     const bEnd = Math.min(s + b + BLOCK - 1, e);
     const bLen = bEnd - bStart + 1;
 
-    // Clustal ruler: * at every 10, number (right-aligned) at every 20
-    // Use width:1ch spans — same rendering engine as sequence, guarantees alignment
     const rulerArr = new Array(bLen).fill(' ');
     for (let i = 0; i < bLen; i++) {
       const pos = bStart + i;
@@ -458,12 +437,21 @@ function compareRange() {
       `<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;color:#999;">${ch === ' ' ? '&nbsp;' : ch}</span>`
     ).join('');
 
-    html += `<div style="${rowStyle}">
-      <div style="${lblStyle}"></div>
-      <div class="aa-seq">${rulerSpans}</div>
-    </div>`;
+    html += `<div style="${rowStyle}"><div style="${lblStyle}"></div><div class="aa-seq">${rulerSpans}</div></div>`;
 
-    // Sequence rows
+    // Query reference row (only in refSeq mode)
+    if (refSeq) {
+      const qSpans = [];
+      for (let i = 0; i < bLen; i++) {
+        const qi = bStart - s + i; // offset into refSeq
+        const aa = qi < refSeq.length ? refSeq[qi] : '-';
+        const c = AA_COLORS[aa] || '#e0e0e0';
+        qSpans.push(`<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;background:${c};">${aa}</span>`);
+      }
+      html += `<div style="${rowStyle}"><div style="${lblStyle}color:#2980b9;font-weight:bold;">${'Query'.padEnd(labelW)}</div><div class="aa-seq">${qSpans.join('')}</div></div>`;
+      html += `<div style="height:4px;border-bottom:1px dashed #ccc;margin-bottom:4px;"></div>`;
+    }
+
     loadedSeqs.forEach(sq => {
       const spans = [];
       for (let i = 0; i < bLen; i++) {
@@ -471,37 +459,51 @@ function compareRange() {
         const aa = sq.seq[pos - 1];
         if (!aa) {
           spans.push(`<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;color:#aaa;">-</span>`);
+        } else if (refSeq) {
+          const qi = pos - s;
+          const match = qi < refSeq.length && aa === refSeq[qi];
+          spans.push(`<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;background:${match?'#888':'#fff'};color:${match?'#fff':'#000'};">${aa}</span>`);
         } else if (conserved.has(pos)) {
           spans.push(`<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;background:#000;color:#fff;">${aa}</span>`);
         } else {
           const shared = posFreq[pos] && (posFreq[pos][aa] || 0) > 1;
-          const bg = shared ? '#888' : '#fff';
-          const fg = shared ? '#fff' : '#000';
-          spans.push(`<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;background:${bg};color:${fg};">${aa}</span>`);
+          spans.push(`<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;background:${shared?'#888':'#fff'};color:${shared?'#fff':'#000'};">${aa}</span>`);
         }
       }
-      html += `<div style="${rowStyle}">
-        <div style="${lblStyle}color:#c0392b;font-weight:bold;">${sq.name.padEnd(labelW)}</div>
-        <div class="aa-seq">${spans.join('')}</div>
-      </div>`;
+      html += `<div style="${rowStyle}"><div style="${lblStyle}color:#c0392b;font-weight:bold;">${sq.name.padEnd(labelW)}</div><div class="aa-seq">${spans.join('')}</div></div>`;
     });
 
-    // Consensus row
     const consSpans = [];
     for (let i = 0; i < bLen; i++) {
       const c = consensusAA(bStart + i);
       consSpans.push(`<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;color:#555;">${c}</span>`);
     }
-    html += `<div style="${rowStyle}">
-      <div style="${lblStyle}"></div>
-      <div class="aa-seq">${consSpans.join('')}</div>
-    </div>`;
-
+    html += `<div style="${rowStyle}"><div style="${lblStyle}"></div><div class="aa-seq">${consSpans.join('')}</div></div>`;
     html += `<div style="height:14px;"></div>`;
   }
+  return html;
+}
 
-  html += `</div>`;
-  resultEl.innerHTML = html;
+/* ── Multi-seq Range Comparison ── */
+function compareRange() {
+  const s = parseInt(document.getElementById('pos-start').value);
+  const e = parseInt(document.getElementById('pos-end').value);
+  const errEl = document.getElementById('query-error');
+  const resultEl = document.getElementById('query-result');
+  errEl.textContent = '';
+  resultEl.innerHTML = '';
+
+  if (!loadedSeqs.length) { errEl.textContent = '請先載入序列。'; return; }
+  if (isNaN(s) || isNaN(e) || s < 1 || e < 1) { errEl.textContent = '請輸入有效的正整數位置。'; return; }
+  if (s > e) { errEl.textContent = '起始位置不能大於結束位置。'; return; }
+
+  resultEl.innerHTML = `<div class="result-block" style="overflow-x:auto;">
+    <div style="font-size:0.88em;font-weight:bold;color:#2c3e50;margin-bottom:10px;">
+      位置 ${s}–${e}（${e-s+1} aa）　共 ${loadedSeqs.length} 條序列比較
+      <span style="font-size:0.85em;font-weight:normal;color:#777;margin-left:12px;">黑底＝保守　灰底＝差異但有相同　白底＝唯一差異</span>
+    </div>
+    ${buildComparisonHtml(s, e, 'query-panel')}
+  </div>`;
 }
 
 /* ── Reverse Search ── */
@@ -579,7 +581,7 @@ function searchSubseq() {
 
     const identHtml = identRanges.map(r =>
       `<div style="font-size:12px;margin-bottom:3px;">
-        <span style="color:#27ae60;font-weight:bold;font-family:'Courier New',monospace;">${r.start}–${r.end}</span>
+        <span style="color:#27ae60;font-weight:bold;font-family:Courier,monospace;">${r.start}–${r.end}</span>
         <span style="color:#777;">（${r.end - r.start + 1} aa）</span>
       </div>`).join('');
     const identCopy = identRanges.map(r => `${r.start}-${r.end}\t${seq.slice(r.start-1, r.end)}`).join('\n');
@@ -589,7 +591,7 @@ function searchSubseq() {
         #${idx+1}　位置 ${h.start}–${h.end}
         <span style="color:${col};">一致性 ${h.matches}/${raw.length} (${p}%)</span>
       </div>
-      ${renderAlignment(raw, h.subject, h.start)}
+      ${buildComparisonHtml(h.start, h.end, 'search-panel', false, raw)}
       <div class="ident-box">
         <div style="font-size:0.82em;font-weight:bold;color:#27ae60;margin-bottom:6px;">完全相同的連續範圍（${identRanges.length} 段）</div>
         ${identHtml}
