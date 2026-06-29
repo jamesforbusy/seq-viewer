@@ -28,11 +28,11 @@
   .form-row label { font-size: 0.9em; color: #444; white-space: nowrap; }
   textarea.seq-input {
     width: 100%; height: 110px;
-    font-family: 'Courier New', monospace; font-size: 12.5px;
+    font-family: Courier, monospace; font-size: 12.5px;
     border: 1px solid #ccc; border-radius: 4px; padding: 8px;
     resize: vertical; color: #222; margin-bottom: 10px;
   }
-  input[type="number"] { width: 90px; padding: 5px 8px; font-size: 0.95em; border: 1px solid #ccc; border-radius: 4px; font-family: 'Courier New', monospace; }
+  input[type="number"] { width: 90px; padding: 5px 8px; font-size: 0.95em; border: 1px solid #ccc; border-radius: 4px; font-family: Courier, monospace; }
   .btn { padding: 6px 16px; border: none; border-radius: 4px; font-size: 0.92em; cursor: pointer; }
   .btn-primary { background: #2980b9; color: #fff; }
   .btn-primary:hover { background: #1f6391; }
@@ -63,10 +63,11 @@
   }
   .seq-section-title { font-size: 1em; font-weight: bold; color: #c0392b; margin-bottom: 10px; }
   .block { margin-bottom: 12px; }
-  .ruler-nums, .ruler-dots, .sequence {
-    font-family: 'Courier New', monospace; font-size: 13px;
-    white-space: pre; line-height: 1.7; letter-spacing: 0;
+  .ruler-nums, .ruler-dots, .sequence, .aa-seq {
+    font-family: Courier, monospace; font-size: 13px;
+    white-space: pre; line-height: 2; letter-spacing: 0;
   }
+  .ruler-nums, .ruler-dots { letter-spacing: 2px; }
   .ruler-nums { color: #999; }
   .ruler-dots { color: #ccc; }
   /* Result */
@@ -76,7 +77,7 @@
   }
   .result-block.purple { border-left-color: #8e44ad; }
   .copy-area {
-    width: 100%; font-family: 'Courier New', monospace; font-size: 12px;
+    width: 100%; font-family: Courier, monospace; font-size: 12px;
     border: 1px solid #ddd; border-radius: 4px; padding: 6px 8px;
     resize: vertical; color: #222;
   }
@@ -127,6 +128,7 @@ HQYGVSQCFLLSPGVLS...
     <label>結束位置</label>
     <input type="number" id="pos-end" min="1" value="30">
     <button class="btn btn-green" onclick="queryRange()">查詢</button>
+    <button class="btn btn-primary" onclick="compareRange()">比較所有序列</button>
     <button class="btn btn-gray" onclick="clearResult()">清除結果</button>
   </div>
   <div class="error" id="query-error"></div>
@@ -169,7 +171,7 @@ let selectedSearchIdx = 0;
 /* ── Core rendering ── */
 function colorAA(aa) {
   const c = AA_COLORS[aa] || '#e0e0e0';
-  return `<span style="display:inline-block;width:1ch;text-align:center;background:${c};">${aa}</span>`;
+  return `<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;background:${c};">${aa}</span>`;
 }
 
 function makeRuler(chunk, posStart) {
@@ -191,7 +193,7 @@ function makeRuler(chunk, posStart) {
 }
 
 function renderSeq(seq, posStart) {
-  const BLOCK = 60;
+  const BLOCK = 100;
   let html = '';
   for (let b = 0; b < seq.length; b += BLOCK) {
     const chunk = seq.slice(b, b + BLOCK);
@@ -203,7 +205,7 @@ function renderSeq(seq, posStart) {
 function renderSeqHighlighted(seq, hits) {
   const hitSet = new Set();
   hits.forEach(h => { for (let p = h.start; p <= h.end; p++) hitSet.add(p); });
-  const BLOCK = 60;
+  const BLOCK = 100;
   let html = '';
   for (let b = 0; b < seq.length; b += BLOCK) {
     const chunk = seq.slice(b, b + BLOCK);
@@ -212,16 +214,16 @@ function renderSeqHighlighted(seq, hits) {
       const pos = bs + i;
       if (hitSet.has(pos)) {
         const c = AA_COLORS[aa] || '#e0e0e0';
-        return `<span style="display:inline-block;width:1ch;text-align:center;background:${c};font-weight:bold;">${aa}</span>`;
+        return `<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;background:${c};font-weight:bold;">${aa}</span>`;
       }
-      return `<span style="display:inline-block;width:1ch;text-align:center;color:#ccc;">${aa}</span>`;
+      return `<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;color:#ccc;">${aa}</span>`;
     }).join('')}</div></div>`;
   }
   return html;
 }
 
 function renderAlignment(query, subject, posStart) {
-  const BLOCK = 60;
+  const BLOCK = 100;
   const LABEL = 6;
   let html = '';
   for (let b = 0; b < query.length; b += BLOCK) {
@@ -242,13 +244,13 @@ function renderAlignment(query, subject, posStart) {
         }
       }
     }
-    const row = `display:flex;font-family:'Courier New',monospace;font-size:13px;line-height:1.8;`;
-    const lbl = `width:${LABEL}ch;flex-shrink:0;color:#999;`;
-    html += `<div style="${row}"><div style="${lbl}"></div><div style="white-space:pre;color:#999;">${numsArr.join('')}</div></div>`;
-    html += `<div style="${row}"><div style="${lbl}"></div><div style="white-space:pre;color:#ccc;">${dotsArr.join('')}</div></div>`;
-    html += `<div style="${row}"><div style="${lbl}">Query </div><div>${[...qChunk].map((aa,i)=>{const m=aa===sChunk[i];const c=m?(AA_COLORS[aa]||'#e0e0e0'):'#ff8888';return`<span style="display:inline-block;width:1ch;text-align:center;background:${c};">${aa}</span>`;}).join('')}</div></div>`;
-    html += `<div style="${row}"><div style="${lbl}"></div><div>${[...qChunk].map((aa,i)=>{const m=aa===sChunk[i];return`<span style="display:inline-block;width:1ch;text-align:center;color:${m?'#27ae60':'#e74c3c'};">${m?'|':'·'}</span>`;}).join('')}</div></div>`;
-    html += `<div style="${row}"><div style="${lbl}">Seq   </div><div>${[...sChunk].map((aa,i)=>{const m=aa===qChunk[i];const c=m?(AA_COLORS[aa]||'#e0e0e0'):'#ffb347';return`<span style="display:inline-block;width:1ch;text-align:center;background:${c};">${aa}</span>`;}).join('')}</div></div>`;
+    const lbl = `width:${LABEL}ch;flex-shrink:0;color:#999;font-family:'Courier New',monospace;font-size:13px;`;
+    const row = `display:flex;line-height:2.2;`;
+    html += `<div style="${row}"><div style="${lbl}"></div><div class="ruler-nums">${numsArr.join('')}</div></div>`;
+    html += `<div style="${row}"><div style="${lbl}"></div><div class="ruler-dots">${dotsArr.join('')}</div></div>`;
+    html += `<div style="${row}"><div style="${lbl}">Query </div><div class="aa-seq">${[...qChunk].map((aa,i)=>{const m=aa===sChunk[i];const c=m?(AA_COLORS[aa]||'#e0e0e0'):'#ff8888';return`<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;background:${c};">${aa}</span>`;}).join('')}</div></div>`;
+    html += `<div style="${row}"><div style="${lbl}"></div><div class="aa-seq">${[...qChunk].map((aa,i)=>{const m=aa===sChunk[i];return`<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;color:${m?'#27ae60':'#e74c3c'};">${m?'|':'·'}</span>`;}).join('')}</div></div>`;
+    html += `<div style="${row}"><div style="${lbl}">Seq   </div><div class="aa-seq">${[...sChunk].map((aa,i)=>{const m=aa===qChunk[i];const c=m?(AA_COLORS[aa]||'#e0e0e0'):'#ffb347';return`<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;background:${c};">${aa}</span>`;}).join('')}</div></div>`;
     html += `<div style="height:10px;"></div>`;
   }
   return html;
@@ -368,6 +370,137 @@ function queryRange() {
   html += `<div style="font-size:0.8em;color:#888;margin-top:8px;margin-bottom:4px;">純文字</div>
     <textarea class="copy-area" rows="2" readonly>${sub}</textarea>
   </div>`;
+  resultEl.innerHTML = html;
+}
+
+/* ── Multi-seq Range Comparison ── */
+function compareRange() {
+  const s = parseInt(document.getElementById('pos-start').value);
+  const e = parseInt(document.getElementById('pos-end').value);
+  const errEl = document.getElementById('query-error');
+  const resultEl = document.getElementById('query-result');
+  errEl.textContent = '';
+  resultEl.innerHTML = '';
+
+  if (!loadedSeqs.length) { errEl.textContent = '請先載入序列。'; return; }
+  if (isNaN(s) || isNaN(e) || s < 1 || e < 1) { errEl.textContent = '請輸入有效的正整數位置。'; return; }
+  if (s > e) { errEl.textContent = '起始位置不能大於結束位置。'; return; }
+
+  const FONT = `font-family:Courier,monospace;font-size:14px;`;
+  const labelW = Math.max(...loadedSeqs.map(sq => sq.name.length), 6) + 2;
+
+  // Measure actual character width to compute block size without scrollbar
+  const _probe = document.createElement('span');
+  _probe.style.cssText = 'font-family:Courier,monospace;font-size:14px;position:absolute;visibility:hidden;white-space:pre;';
+  _probe.textContent = '0';
+  document.body.appendChild(_probe);
+  const charPx = _probe.getBoundingClientRect().width + 2; // +2px spacing
+  document.body.removeChild(_probe);
+  const panelInner = document.getElementById('query-panel').clientWidth - 40; // panel padding 20px×2
+  const availPx = panelInner - 28 - labelW * charPx; // result-block padding 14px×2
+  const BLOCK = Math.max(40, Math.floor(availPx / charPx));
+  const totalLen = e - s + 1;
+
+  // Pre-compute conservation and AA frequency per position
+  const conserved = new Set();
+  const posFreq = {};  // pos → { AA: count }
+  for (let pos = s; pos <= e; pos++) {
+    const aas = loadedSeqs.map(sq => sq.seq[pos - 1] || null).filter(a => a !== null);
+    if (!aas.length) continue;
+    const freq = {};
+    aas.forEach(a => freq[a] = (freq[a] || 0) + 1);
+    posFreq[pos] = freq;
+    if (aas.every(a => a === aas[0])) conserved.add(pos);
+  }
+
+  // Consensus: lowercase of most common aa; space if no majority
+  function consensusAA(pos) {
+    const aas = loadedSeqs.map(sq => sq.seq[pos - 1]).filter(Boolean);
+    if (!aas.length) return ' ';
+    const freq = {};
+    aas.forEach(a => freq[a] = (freq[a] || 0) + 1);
+    const [top, cnt] = Object.entries(freq).sort((a, b) => b[1] - a[1])[0];
+    return cnt === aas.length ? top.toUpperCase() : (cnt > aas.length / 2 ? top.toLowerCase() : ' ');
+  }
+
+  const rowStyle = `display:flex;align-items:baseline;line-height:2.1;`;
+  const lblStyle = `${FONT}width:${labelW}ch;flex-shrink:0;`;
+
+  let html = `<div class="result-block" style="overflow-x:auto;">
+    <div style="font-size:0.88em;font-weight:bold;color:#2c3e50;margin-bottom:10px;">
+      位置 ${s}–${e}（${totalLen} aa）　共 ${loadedSeqs.length} 條序列比較
+      <span style="font-size:0.85em;font-weight:normal;color:#777;margin-left:12px;">黑底＝保守　灰底＝差異但有相同　白底＝唯一差異</span>
+    </div>`;
+
+  for (let b = 0; b < totalLen; b += BLOCK) {
+    const bStart = s + b;
+    const bEnd = Math.min(s + b + BLOCK - 1, e);
+    const bLen = bEnd - bStart + 1;
+
+    // Clustal ruler: * at every 10, number (right-aligned) at every 20
+    // Use width:1ch spans — same rendering engine as sequence, guarantees alignment
+    const rulerArr = new Array(bLen).fill(' ');
+    for (let i = 0; i < bLen; i++) {
+      const pos = bStart + i;
+      if (pos % 20 === 0) {
+        const label = String(pos);
+        const rightStart = i - (label.length - 1);
+        if (rightStart >= 0) {
+          for (let j = 0; j < label.length; j++) rulerArr[rightStart + j] = label[j];
+        } else {
+          for (let j = 0; j < label.length && i + j < bLen; j++) rulerArr[i + j] = label[j];
+        }
+      } else if (pos % 10 === 0) {
+        rulerArr[i] = '*';
+      }
+    }
+    const rulerSpans = rulerArr.map(ch =>
+      `<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;color:#999;">${ch === ' ' ? '&nbsp;' : ch}</span>`
+    ).join('');
+
+    html += `<div style="${rowStyle}">
+      <div style="${lblStyle}"></div>
+      <div class="aa-seq">${rulerSpans}</div>
+    </div>`;
+
+    // Sequence rows
+    loadedSeqs.forEach(sq => {
+      const spans = [];
+      for (let i = 0; i < bLen; i++) {
+        const pos = bStart + i;
+        const aa = sq.seq[pos - 1];
+        if (!aa) {
+          spans.push(`<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;color:#aaa;">-</span>`);
+        } else if (conserved.has(pos)) {
+          spans.push(`<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;background:#000;color:#fff;">${aa}</span>`);
+        } else {
+          const shared = posFreq[pos] && (posFreq[pos][aa] || 0) > 1;
+          const bg = shared ? '#888' : '#fff';
+          const fg = shared ? '#fff' : '#000';
+          spans.push(`<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;background:${bg};color:${fg};">${aa}</span>`);
+        }
+      }
+      html += `<div style="${rowStyle}">
+        <div style="${lblStyle}color:#c0392b;font-weight:bold;">${sq.name.padEnd(labelW)}</div>
+        <div class="aa-seq">${spans.join('')}</div>
+      </div>`;
+    });
+
+    // Consensus row
+    const consSpans = [];
+    for (let i = 0; i < bLen; i++) {
+      const c = consensusAA(bStart + i);
+      consSpans.push(`<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;color:#555;">${c}</span>`);
+    }
+    html += `<div style="${rowStyle}">
+      <div style="${lblStyle}"></div>
+      <div class="aa-seq">${consSpans.join('')}</div>
+    </div>`;
+
+    html += `<div style="height:14px;"></div>`;
+  }
+
+  html += `</div>`;
   resultEl.innerHTML = html;
 }
 
