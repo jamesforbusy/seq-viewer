@@ -251,26 +251,37 @@ function translateCodon() {
     aa += CODON_TABLE[s.slice(i, i + 3)] || 'X';
   }
 
-  const stopIdx = aa.indexOf('*');
-  const aaClean = stopIdx >= 0 ? aa.slice(0, stopIdx) : aa;
-  const stopNote = stopIdx >= 0
-    ? `，含終止密碼子（位置 ${stopIdx + 1}，截斷後 ${aaClean.length} aa）`
-    : `，${aaClean.length} aa`;
+  // Collect stop codon positions (1-based)
+  const stopPositions = [];
+  for (let i = 0; i < aa.length; i++) { if (aa[i] === '*') stopPositions.push(i + 1); }
 
-  lastTranslated = { name, aa: aaClean };
+  // For loading into viewer: trim at first stop codon
+  const firstStop = aa.indexOf('*');
+  const aaForLoad = firstStop >= 0 ? aa.slice(0, firstStop) : aa;
+  lastTranslated = { name, aa: aaForLoad };
+
+  const stopSummary = stopPositions.length === 0
+    ? '無終止密碼子'
+    : `終止密碼子 ${stopPositions.length} 個，位置：${stopPositions.slice(0, 5).join('、')}${stopPositions.length > 5 ? '…' : ''}`;
+
+  const MAX_RENDER = 3000;
+  const seqHtml = aa.length <= MAX_RENDER
+    ? renderSeq(aa, 1)
+    : `<div style="font-size:0.85em;color:#e67e22;margin:8px 0;">序列長度 ${aa.length} aa，省略彩色顯示以避免瀏覽器卡頓。</div>`;
 
   let html = `<div class="result-block" style="overflow-x:auto;">
-    <div style="font-size:0.88em;font-weight:bold;color:#c0392b;margin-bottom:8px;">
+    <div style="font-size:0.88em;font-weight:bold;color:#c0392b;margin-bottom:4px;">
       ${name}　<span style="font-weight:normal;color:#777;">
-        ${nt.length} nt，讀框 ${frame}${doRevComp ? '（反向互補）' : ''}${stopNote}
+        ${nt.length} nt → ${aa.length} aa，讀框 ${frame}${doRevComp ? '（反向互補）' : ''}
       </span>
     </div>
-    ${renderSeq(aaClean, 1)}
-    <div style="font-size:0.8em;color:#888;margin-top:8px;margin-bottom:4px;">胺基酸序列（純文字）</div>
-    <textarea class="copy-area" rows="3" readonly>${aaClean}</textarea>
+    <div style="font-size:0.82em;color:${stopPositions.length ? '#e74c3c' : '#27ae60'};margin-bottom:8px;">${stopSummary}</div>
+    ${seqHtml}
+    <div style="font-size:0.8em;color:#888;margin-top:8px;margin-bottom:4px;">完整轉譯序列（含終止密碼子 *）</div>
+    <textarea class="copy-area" rows="3" readonly>${aa}</textarea>
     <div style="margin-top:10px;">
       <button class="btn btn-green" onclick="loadTranslated()">載入至序列分析</button>
-      <span style="font-size:0.82em;color:#777;margin-left:8px;">將此序列加入上方輸入框並自動載入</span>
+      <span style="font-size:0.82em;color:#777;margin-left:8px;">截至第一個終止密碼子前的序列（${aaForLoad.length} aa）</span>
     </div>
   </div>`;
   resultEl.innerHTML = html;
@@ -294,6 +305,7 @@ function clearCodon() {
 
 /* ── Core rendering ── */
 function colorAA(aa) {
+  if (aa === '*') return `<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;background:#e74c3c;color:#fff;font-weight:bold;">*</span>`;
   const c = AA_COLORS[aa] || '#e0e0e0';
   return `<span style="display:inline-block;width:calc(1ch + 2px);text-align:center;background:${c};">${aa}</span>`;
 }
