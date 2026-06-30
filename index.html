@@ -119,6 +119,24 @@ HQYGVSQCFLLSPGVLS...
   <div class="error" id="load-error"></div>
 </div>
 
+<!-- Quick Compare Panel -->
+<div class="panel" id="quick-panel">
+  <h2>快速比對　<span style="font-size:0.82em;font-weight:normal;color:#777;">貼上 2 條以上序列，直接比對全長</span></h2>
+  <textarea class="seq-input" id="quick-input" placeholder=">Seq_A
+MHLGPERAGWGTCTAPT...
+>Seq_B
+MHLGAERAGWGTCAAPT...
+
+（FASTA 格式；輸入 2 條以上序列）"></textarea>
+  <div class="form-row">
+    <button class="btn btn-primary" onclick="quickCompare()">比對</button>
+    <button class="btn btn-gray" onclick="clearQuick()">清除</button>
+    <span id="quick-info" style="font-size:0.85em;color:#27ae60;"></span>
+  </div>
+  <div class="error" id="quick-error"></div>
+  <div id="quick-result"></div>
+</div>
+
 <!-- Codon Translation Panel -->
 <div class="panel">
   <h2>密碼子轉譯　<span style="font-size:0.82em;font-weight:normal;color:#777;">DNA / RNA → 胺基酸序列</span></h2>
@@ -660,9 +678,10 @@ function queryRange() {
 }
 
 /* ── Shared Clustal-style comparison renderer ── */
-function buildComparisonHtml(s, e, panelId, simple = false, refSeq = null) {
+function buildComparisonHtml(s, e, panelId, simple = false, refSeq = null, seqs = null) {
+  const seqsToUse = seqs || loadedSeqs;
   const FONT = `font-family:Courier,monospace;font-size:14px;`;
-  const labelW = Math.max(...loadedSeqs.map(sq => sq.name.length), 6) + 2;
+  const labelW = Math.max(...seqsToUse.map(sq => sq.name.length), 6) + 2;
 
   const _probe = document.createElement('span');
   _probe.style.cssText = 'font-family:Courier,monospace;font-size:14px;position:absolute;visibility:hidden;white-space:pre;';
@@ -678,7 +697,7 @@ function buildComparisonHtml(s, e, panelId, simple = false, refSeq = null) {
   const conserved = new Set();
   const posFreq = {};
   for (let pos = s; pos <= e; pos++) {
-    const aas = loadedSeqs.map(sq => sq.seq[pos - 1] || null).filter(a => a !== null);
+    const aas = seqsToUse.map(sq => sq.seq[pos - 1] || null).filter(a => a !== null);
     if (!aas.length) continue;
     const freq = {};
     aas.forEach(a => freq[a] = (freq[a] || 0) + 1);
@@ -687,7 +706,7 @@ function buildComparisonHtml(s, e, panelId, simple = false, refSeq = null) {
   }
 
   function consensusAA(pos) {
-    const aas = loadedSeqs.map(sq => sq.seq[pos - 1]).filter(Boolean);
+    const aas = seqsToUse.map(sq => sq.seq[pos - 1]).filter(Boolean);
     if (!aas.length) return ' ';
     const freq = {};
     aas.forEach(a => freq[a] = (freq[a] || 0) + 1);
@@ -738,7 +757,7 @@ function buildComparisonHtml(s, e, panelId, simple = false, refSeq = null) {
       html += `<div style="height:4px;border-bottom:1px dashed #ccc;margin-bottom:4px;"></div>`;
     }
 
-    loadedSeqs.forEach(sq => {
+    seqsToUse.forEach(sq => {
       const spans = [];
       for (let i = 0; i < bLen; i++) {
         const pos = bStart + i;
@@ -887,6 +906,40 @@ function searchSubseq() {
   });
 
   resultEl.innerHTML = html;
+}
+
+/* ── Quick Compare ── */
+function quickCompare() {
+  const errEl = document.getElementById('quick-error');
+  const resultEl = document.getElementById('quick-result');
+  const infoEl = document.getElementById('quick-info');
+  errEl.textContent = '';
+  resultEl.innerHTML = '';
+  infoEl.textContent = '';
+
+  const raw = document.getElementById('quick-input').value;
+  if (!raw.trim()) { errEl.textContent = '請貼上序列。'; return; }
+
+  const seqs = parseMultiSeq(raw);
+  if (seqs.length < 2) { errEl.textContent = '請至少輸入 2 條序列（FASTA 格式）。'; return; }
+
+  const maxLen = Math.max(...seqs.map(s => s.seq.length));
+  infoEl.textContent = `${seqs.length} 條序列，最長 ${maxLen} aa`;
+
+  resultEl.innerHTML = `<div class="result-block" style="overflow-x:auto;">
+    <div style="font-size:0.88em;font-weight:bold;color:#2c3e50;margin-bottom:10px;">
+      全長比對（1–${maxLen}）　共 ${seqs.length} 條序列
+      <span style="font-size:0.85em;font-weight:normal;color:#777;margin-left:12px;">黑底＝保守　灰底＝差異但有相同　白底＝唯一差異</span>
+    </div>
+    ${buildComparisonHtml(1, maxLen, 'quick-panel', false, null, seqs)}
+  </div>`;
+}
+
+function clearQuick() {
+  document.getElementById('quick-input').value = '';
+  document.getElementById('quick-result').innerHTML = '';
+  document.getElementById('quick-error').textContent = '';
+  document.getElementById('quick-info').textContent = '';
 }
 
 /* ── Clear ── */
