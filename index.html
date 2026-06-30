@@ -137,6 +137,7 @@ ATGGGCCCAGGCTTCAAGCAGAGCCTCCTCACCTTCATCCTCCTGTTCAGCCTCCTCACAAGAGGCTTCAGC...
       <input type="checkbox" id="codon-revcomp">反向互補
     </label>
     <button class="btn btn-orange" onclick="translateCodon()">轉譯</button>
+    <button class="btn btn-green" onclick="extractTargetSeqs()">擷取目標序列</button>
     <button class="btn btn-gray" onclick="clearCodon()">清除</button>
   </div>
   <div class="error" id="codon-error"></div>
@@ -194,6 +195,20 @@ let loadedSeqs = [];      // [{name, seq}, ...]
 let selectedRangeIdx = 0;
 let selectedSearchIdx = 0;
 let lastTranslated = null;
+let extractedSegments = [];
+let translatedSegments = {};
+
+const RE_TABLE = {
+  'GAATTC':'EcoRI','GGATCC':'BamHI','AAGCTT':'HindIII',
+  'GCTAGC':'NheI','CTCGAG':'XhoI','GTCGAC':'SalI',
+  'GCGGCCGC':'NotI','TCTAGA':'XbaI','CCCGGG':'SmaI/XmaI',
+  'GGTACC':'KpnI','GAGCTC':'SacI','ATCGAT':'ClaI',
+  'CCATGG':'NcoI','CATATG':'NdeI','ACGCGT':'MluI',
+  'AGATCT':'BglII','ACTAGT':'SpeI','ACCGGT':'AgeI',
+  'GCATGC':'SphI','TTAATTAA':'PacI','GACGTC':'AatII',
+  'TCCGGA':'BspEI','CAATTG':'MfeI','GGTCTC':'BsaI',
+  'CGTCTC':'BsmBI','GAAGAC':'BbsI',
+};
 
 const CODON_TABLE = {
   'TTT':'F','TTC':'F','TTA':'L','TTG':'L',
@@ -301,6 +316,141 @@ function clearCodon() {
   document.getElementById('codon-result').innerHTML = '';
   document.getElementById('codon-error').textContent = '';
   lastTranslated = null;
+  extractedSegments = [];
+  translatedSegments = {};
+}
+
+/* ── Extract target sequences by lowercase RE sites ── */
+function extractTargetSeqs() {
+  const rawInput = document.getElementById('codon-input').value;
+  const errEl = document.getElementById('codon-error');
+  const resultEl = document.getElementById('codon-result');
+  errEl.textContent = '';
+  resultEl.innerHTML = '';
+  extractedSegments = [];
+  translatedSegments = {};
+
+  if (!rawInput.trim()) { errEl.textContent = '請輸入核苷酸序列。'; return; }
+
+  let raw = rawInput.trim();
+  let seqName = '序列';
+  if (raw.startsWith('>')) {
+    const lines = raw.split(/\r?\n/);
+    seqName = lines[0].slice(1).trim() || '序列';
+    raw = lines.slice(1).join('');
+  }
+
+  // Preserve case — only strip non-nucleotide chars
+  const nt = raw.replace(/[^ATCGUNatcgun]/g, '');
+  if (!nt) { errEl.textContent = '未偵測到核苷酸序列。'; return; }
+  if (nt === nt.toUpperCase()) { errEl.textContent = '序列中未包含小寫字母，無法辨識限制酶切位。'; return; }
+
+  // Split into alternating uppercase/lowercase segments
+  const allSegs = [];
+  let i = 0;
+  while (i < nt.length) {
+    const isLower = nt[i] >= 'a' && nt[i] <= 'z';
+    let j = i;
+    while (j < nt.length && ((nt[j] >= 'a' && nt[j] <= 'z') === isLower)) j++;
+    const seg = nt.slice(i, j);
+    const upper = seg.toUpperCase().replace(/U/g, 'T');
+    allSegs.push({ seq: seg, upper, isRE: isLower, start: i + 1, end: j });
+    i = j;
+  }
+
+  // Identify RE sites
+  allSegs.forEach(seg => {
+    if (seg.isRE) seg.enzyme = RE_TABLE[seg.upper] || '未知限制酶';
+  });
+
+  // Index target (non-RE) segments
+  let tIdx = 0;
+  allSegs.forEach(seg => { if (!seg.isRE) { seg.tIdx = tIdx; extractedSegments.push(seg); tIdx++; } });
+
+  const reCount = allSegs.filter(s => s.isRE).length;
+  const targetCount = extractedSegments.length;
+
+  let html = `<div style="font-size:0.88em;font-weight:bold;color:#2c3e50;margin-bottom:12px;">
+    ${seqName}　${nt.length} nt　偵測到
+    <span style="color:#e74c3c;">${reCount} 個限制酶切位</span>，
+    <span style="color:#27ae60;">${targetCount} 段目標序列</span>
+  </div>`;
+
+  allSegs.forEach(seg => {
+    if (seg.isRE) {
+      html += `<div style="background:#fdf0ed;border:1px solid #e74c3c;border-radius:4px;padding:6px 12px;margin-bottom:6px;">
+        <span style="color:#e74c3c;font-weight:bold;">✂ ${seg.enzyme}</span>
+        <span style="color:#777;font-size:0.88em;margin:0 10px;">位置 ${seg.start}–${seg.end}（${seg.end - seg.start + 1} nt）</span>
+        <span style="font-family:Courier,monospace;color:#c0392b;">${seg.upper}</span>
+      </div>`;
+    } else {
+      const ntLen = seg.upper.length;
+      const aaEst = Math.floor(ntLen / 3);
+      html += `<div style="background:#f0faf4;border:1px solid #27ae60;border-radius:4px;padding:8px 12px;margin-bottom:6px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+          <span style="font-weight:bold;color:#27ae60;">目標序列 #${seg.tIdx + 1}</span>
+          <span style="color:#777;font-size:0.88em;">位置 ${seg.start}–${seg.end}　${ntLen} nt → 預估 ${aaEst} aa</span>
+          <button class="btn btn-orange" style="padding:3px 10px;font-size:0.85em;" onclick="translateSegment(${seg.tIdx})">翻譯</button>
+          <button class="btn btn-gray" style="padding:3px 10px;font-size:0.85em;" onclick="copySegment(${seg.tIdx})">複製 NT</button>
+        </div>
+        <div style="font-family:Courier,monospace;font-size:12px;color:#555;word-break:break-all;">${seg.upper.slice(0, 80)}${ntLen > 80 ? ` … (共 ${ntLen} nt)` : ''}</div>
+        <div id="seg-result-${seg.tIdx}"></div>
+      </div>`;
+    }
+  });
+
+  resultEl.innerHTML = `<div class="result-block" style="overflow-x:auto;">${html}</div>`;
+}
+
+function translateSegment(idx) {
+  const seg = extractedSegments[idx];
+  if (!seg) return;
+  const frame = parseInt(document.getElementById('codon-frame').value);
+  const doRevComp = document.getElementById('codon-revcomp').checked;
+
+  let s = doRevComp ? revComp(seg.upper) : seg.upper;
+  s = s.slice(frame - 1);
+  let aa = '';
+  for (let i = 0; i + 2 < s.length; i += 3) aa += CODON_TABLE[s.slice(i, i + 3)] || 'X';
+
+  const stopPositions = [];
+  for (let i = 0; i < aa.length; i++) { if (aa[i] === '*') stopPositions.push(i + 1); }
+  const firstStop = aa.indexOf('*');
+  const aaClean = firstStop >= 0 ? aa.slice(0, firstStop) : aa;
+  translatedSegments[idx] = aaClean;
+
+  const stopSummary = stopPositions.length === 0
+    ? '<span style="color:#27ae60;">無終止密碼子</span>'
+    : `<span style="color:#e74c3c;">終止密碼子 ${stopPositions.length} 個，位置：${stopPositions.slice(0, 5).join('、')}${stopPositions.length > 5 ? '…' : ''}</span>`;
+
+  const MAX_RENDER = 3000;
+  const seqHtml = aaClean.length <= MAX_RENDER
+    ? renderSeq(aaClean, 1)
+    : `<div style="font-size:0.85em;color:#e67e22;margin:6px 0;">序列 ${aaClean.length} aa，省略彩色顯示。</div>`;
+
+  document.getElementById(`seg-result-${idx}`).innerHTML = `
+    <div style="font-size:0.82em;color:#555;margin:6px 0;">Frame ${frame}${doRevComp ? '（反向互補）' : ''} → ${aaClean.length} aa　${stopSummary}</div>
+    ${seqHtml}
+    <textarea class="copy-area" rows="2" style="margin-top:6px;" readonly>${aaClean}</textarea>
+    <button class="btn btn-green" style="margin-top:6px;padding:4px 12px;font-size:0.85em;" onclick="loadSegment(${idx})">載入至序列分析</button>
+  `;
+}
+
+function copySegment(idx) {
+  const seg = extractedSegments[idx];
+  if (!seg) return;
+  navigator.clipboard.writeText(seg.upper).catch(() => {});
+}
+
+function loadSegment(idx) {
+  const aa = translatedSegments[idx];
+  if (!aa) return;
+  const name = `目標序列 ${idx + 1}`;
+  const existing = document.getElementById('seq-input').value.trim();
+  const entry = `>${name}\n${aa}`;
+  document.getElementById('seq-input').value = existing ? existing + '\n' + entry : entry;
+  loadSeqs();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 /* ── Core rendering ── */
